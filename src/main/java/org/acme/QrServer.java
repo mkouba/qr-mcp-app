@@ -1,0 +1,94 @@
+package org.acme;
+
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Objects;
+
+import io.nayuki.qrcodegen.QrCode;
+import io.quarkiverse.mcp.server.ImageContent;
+import io.quarkiverse.mcp.server.MetaField;
+import io.quarkiverse.mcp.server.Resource;
+import io.quarkiverse.mcp.server.TextResourceContents;
+import io.quarkiverse.mcp.server.Tool;
+import io.quarkiverse.mcp.server.ToolArg;
+import io.quarkiverse.mcp.server.MetaField.Type;
+
+/**
+ * A minimal Python MCP server that generates customizable QR codes with an
+ * interactive view UI rewritten to Quarkus MCP.
+ * 
+ * Original Python source:
+ * https://github.com/modelcontextprotocol/ext-apps/blob/main/examples/qr-server/server.py
+ */
+public class QrServer {
+
+    private static final String VIEW_URI = "ui://qr-server/view.html";
+
+    @Tool(description = "Generate a QR code from text.")
+    @MetaField(name = "ui", value = """
+            {"resourceUri": "ui://qr-server/view.html"}
+            """, type = Type.JSON)
+    ImageContent generateQr(
+            @ToolArg(description = "The text/URL to encode", defaultValue = "https://modelcontextprotocol.io") String text,
+            @ToolArg(description = "Size of each box in pixels", defaultValue = "10") int boxSize,
+            @ToolArg(description = "Border size in boxes", defaultValue = "4") int border,
+            @ToolArg(description = "Error correction level", defaultValue = "MEDIUM") QrCode.Ecc errorCorrection,
+            @ToolArg(description = "Foreground color (hex like #FF0000 or name like red)", defaultValue = "black") String fillColor,
+            @ToolArg(description = "Background color (hex like #FFFFFF or name like white)", defaultValue = "white") String backColor) {
+
+        QrCode qr = QrCode.encodeText(text, errorCorrection);
+        return new ImageContent(toBase64Image(qr, border, border, boxSize, border), "image/png");
+    }
+
+    @Resource(uri = VIEW_URI, description = "View HTML resource.")
+    @MetaField(name = "ui", value = """
+            {"csp": {"resourceDomains": ["https://unpkg.com"]}}
+            """, type = Type.JSON)
+    TextResourceContents view() {
+        return new TextResourceContents(VIEW_URI, readResourceFile("qr-mcp-app.html"), "text/html");
+    }
+
+    /**
+     * Original source:
+     * https://github.com/myfear/ejq_substack_articles/blob/main/qr-code-demo/src/main/java/org/acme/qr/QRCodeService.java#L64-L97
+     */
+    private static String toBase64Image(QrCode qr, int scale, int border, int lightColor, int darkColor) {
+        Objects.requireNonNull(qr);
+        if (scale <= 0 || border < 0)
+            throw new IllegalArgumentException("Value out of range");
+        if (border > Integer.MAX_VALUE / 2 || qr.size + border * 2L > Integer.MAX_VALUE / scale)
+            throw new IllegalArgumentException("Scale or border too large");
+
+        BufferedImage image = new BufferedImage((qr.size + border * 2) * scale, (qr.size + border * 2) * scale,
+                BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                boolean color = qr.getModule(x / scale - border, y / scale - border);
+                image.setRGB(x, y, color ? darkColor : lightColor);
+            }
+        }
+
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            javax.imageio.ImageIO.write(image, "PNG", baos);
+            return java.util.Base64.getEncoder().encodeToString(baos.toByteArray());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to encode image to base64", e);
+        }
+    }
+
+    private static String readResourceFile(String fileName) {
+        try (InputStream is = QrServer.class.getClassLoader().getResourceAsStream(fileName)) {
+            if (is == null) {
+                throw new IllegalArgumentException("File not found: " + fileName);
+            }
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+}
