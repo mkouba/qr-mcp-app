@@ -11,11 +11,11 @@ import java.util.Objects;
 import io.nayuki.qrcodegen.QrCode;
 import io.quarkiverse.mcp.server.ImageContent;
 import io.quarkiverse.mcp.server.MetaField;
+import io.quarkiverse.mcp.server.MetaField.Type;
 import io.quarkiverse.mcp.server.Resource;
 import io.quarkiverse.mcp.server.TextResourceContents;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
-import io.quarkiverse.mcp.server.MetaField.Type;
 
 /**
  * A minimal Python MCP server that generates customizable QR codes with an
@@ -25,6 +25,8 @@ import io.quarkiverse.mcp.server.MetaField.Type;
  * https://github.com/modelcontextprotocol/ext-apps/blob/main/examples/qr-server/server.py
  */
 public class QrServer {
+
+    private static final String RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
 
     private static final String VIEW_URI = "ui://qr-server/view.html";
 
@@ -37,11 +39,13 @@ public class QrServer {
             @ToolArg(description = "Size of each box in pixels", defaultValue = "10") int boxSize,
             @ToolArg(description = "Border size in boxes", defaultValue = "4") int border,
             @ToolArg(description = "Error correction level", defaultValue = "MEDIUM") QrCode.Ecc errorCorrection,
-            @ToolArg(description = "Foreground color (hex like #FF0000 or name like red)", defaultValue = "black") String fillColor,
-            @ToolArg(description = "Background color (hex like #FFFFFF or name like white)", defaultValue = "white") String backColor) {
+            @ToolArg(description = "Foreground color (hex code like #FF0000)", defaultValue = "#000000") String foregroundColor,
+            @ToolArg(description = "Background color (hex code like #F0F0F0)", defaultValue = "#FFFFFF") String backgroundColor) {
 
         QrCode qr = QrCode.encodeText(text, errorCorrection);
-        return new ImageContent(toBase64Image(qr, border, border, boxSize, border), "image/png");
+        return new ImageContent(
+                toBase64Image(qr, boxSize, border, hexColorToInt(backgroundColor), hexColorToInt(foregroundColor)),
+                "image/png");
     }
 
     @Resource(uri = VIEW_URI, description = "View HTML resource.")
@@ -49,14 +53,18 @@ public class QrServer {
             {"csp": {"resourceDomains": ["https://unpkg.com"]}}
             """, type = Type.JSON)
     TextResourceContents view() {
-        return new TextResourceContents(VIEW_URI, readResourceFile("qr-mcp-app.html"), "text/html");
+        return new TextResourceContents(VIEW_URI, readResourceFile("qr-mcp-app.html"), RESOURCE_MIME_TYPE);
     }
 
     /**
      * Original source:
      * https://github.com/myfear/ejq_substack_articles/blob/main/qr-code-demo/src/main/java/org/acme/qr/QRCodeService.java#L64-L97
      */
-    private static String toBase64Image(QrCode qr, int scale, int border, int lightColor, int darkColor) {
+    static String toBase64Image(QrCode qr, int scale, int border, int lightColor, int darkColor) {
+        return java.util.Base64.getEncoder().encodeToString(toImage(qr, scale, border, lightColor, darkColor));
+    }
+
+    static byte[] toImage(QrCode qr, int scale, int border, int lightColor, int darkColor) {
         Objects.requireNonNull(qr);
         if (scale <= 0 || border < 0)
             throw new IllegalArgumentException("Value out of range");
@@ -71,12 +79,11 @@ public class QrServer {
                 image.setRGB(x, y, color ? darkColor : lightColor);
             }
         }
-
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             javax.imageio.ImageIO.write(image, "PNG", baos);
-            return java.util.Base64.getEncoder().encodeToString(baos.toByteArray());
+            return baos.toByteArray();
         } catch (IOException e) {
-            throw new RuntimeException("Failed to encode image to base64", e);
+            throw new RuntimeException("Failed to encode image", e);
         }
     }
 
@@ -88,6 +95,22 @@ public class QrServer {
             return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    static int hexColorToInt(String colorHex) {
+        if (colorHex == null) {
+            throw new IllegalArgumentException("colorHex must not be null");
+        }
+        colorHex = colorHex.strip();
+        if (colorHex.startsWith("#")) {
+            try {
+                return Integer.parseInt(colorHex.substring(1), 16);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Not a hex color: " + colorHex);
+            }
+        } else {
+            throw new IllegalArgumentException("Invalid hex color: " + colorHex);
         }
     }
 
