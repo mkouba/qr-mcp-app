@@ -26,7 +26,7 @@ import io.quarkiverse.mcp.server.ToolArg;
  */
 public class QrServer {
 
-    private static final String RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
+    private static final String MCP_APP_RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
 
     private static final String VIEW_URI = "ui://qr-server/view.html";
 
@@ -48,12 +48,12 @@ public class QrServer {
                 "image/png");
     }
 
-    @Resource(uri = VIEW_URI, description = "View HTML resource.")
+    @Resource(uri = VIEW_URI, description = "View HTML resource.", mimeType = MCP_APP_RESOURCE_MIME_TYPE)
     @MetaField(name = "ui", value = """
             {"csp": {"resourceDomains": ["https://unpkg.com"]}}
             """, type = Type.JSON)
     TextResourceContents view() {
-        return new TextResourceContents(VIEW_URI, readResourceFile("qr-mcp-app.html"), RESOURCE_MIME_TYPE);
+        return new TextResourceContents(VIEW_URI, readResourceFile("qr-mcp-app.html"), MCP_APP_RESOURCE_MIME_TYPE);
     }
 
     /**
