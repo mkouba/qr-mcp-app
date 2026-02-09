@@ -6,16 +6,20 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.Objects;
 
 import io.nayuki.qrcodegen.QrCode;
 import io.quarkiverse.mcp.server.ImageContent;
 import io.quarkiverse.mcp.server.MetaField;
+import io.quarkiverse.mcp.server.MetaKey;
 import io.quarkiverse.mcp.server.MetaField.Type;
 import io.quarkiverse.mcp.server.Resource;
 import io.quarkiverse.mcp.server.TextResourceContents;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 
 /**
  * A minimal Python MCP server that generates customizable QR codes with an
@@ -48,12 +52,23 @@ public class QrServer {
                 "image/png");
     }
 
+    // The spec is clear that _meta.ui must be checked from both resources/list and resources/read
+    // But some implementations do not care, so we append the csp meta to each resource response
+    // https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/draft/apps.mdx#metadata-location
+    private static final Map<MetaKey, Object> RESOURCE_META = Map.of(MetaKey.of("ui"),
+            new JsonObject()
+                    .put("csp", new JsonObject()
+                            .put("resourceDomains", new JsonArray().add("https://unpkg.com"))));
+
     @Resource(uri = VIEW_URI, description = "View HTML resource.", mimeType = MCP_APP_RESOURCE_MIME_TYPE)
     @MetaField(name = "ui", value = """
             {"csp": {"resourceDomains": ["https://unpkg.com"]}}
             """, type = Type.JSON)
     TextResourceContents view() {
-        return new TextResourceContents(VIEW_URI, readResourceFile("qr-mcp-app.html"), MCP_APP_RESOURCE_MIME_TYPE);
+        return new TextResourceContents(VIEW_URI,
+                readResourceFile("qr-mcp-app.html"),
+                MCP_APP_RESOURCE_MIME_TYPE,
+                RESOURCE_META);
     }
 
     /**
